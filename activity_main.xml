@@ -1,21 +1,173 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#101114">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="PhotoEditPro" android:textColor="#FFFFFF" android:textSize="26sp" android:textStyle="bold" android:layout_marginBottom="12dp"/>
-        <FrameLayout android:layout_width="match_parent" android:layout_height="360dp" android:background="#202228">
-            <ImageView android:id="@+id/imageView" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:visibility="gone"/>
-            <TextView android:id="@+id/emptyText" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:text="একটি ছবি নির্বাচন করুন" android:textColor="#AAAAAA" android:textSize="18sp"/>
-        </FrameLayout>
-        <com.google.android.material.button.MaterialButton android:id="@+id/openButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ছবি নির্বাচন করুন" android:layout_marginTop="14dp"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Brightness" android:textColor="#FFFFFF" android:layout_marginTop="12dp"/>
-        <com.google.android.material.slider.Slider android:id="@+id/brightnessSlider" android:layout_width="match_parent" android:layout_height="wrap_content" android:valueFrom="-1" android:valueTo="1" android:value="0" android:stepSize="0.01"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Contrast" android:textColor="#FFFFFF"/>
-        <com.google.android.material.slider.Slider android:id="@+id/contrastSlider" android:layout_width="match_parent" android:layout_height="wrap_content" android:valueFrom="0.5" android:valueTo="1.8" android:value="1" android:stepSize="0.01"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Saturation" android:textColor="#FFFFFF"/>
-        <com.google.android.material.slider.Slider android:id="@+id/saturationSlider" android:layout_width="match_parent" android:layout_height="wrap_content" android:valueFrom="0" android:valueTo="2" android:value="1" android:stepSize="0.01"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-            <com.google.android.material.button.MaterialButton android:id="@+id/rotateButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Rotate"/>
-            <com.google.android.material.button.MaterialButton android:id="@+id/saveButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Save"/>
-        </LinearLayout>
-    </LinearLayout>
-</ScrollView>
+package com.photoeditpro.app
+
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.os.Bundle
+import android.provider.MediaStore
+import android.view.View
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.slider.Slider
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var imageView: ImageView
+    private lateinit var emptyText: TextView
+
+    private var originalBitmap: Bitmap? = null
+
+    private var rotation = 0f
+    private var brightness = 0f
+    private var contrast = 1f
+    private var saturation = 1f
+
+    private val imagePicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri == null) return@registerForActivityResult
+
+            contentResolver.openInputStream(uri)?.use {
+                originalBitmap = BitmapFactory.decodeStream(it)
+            }
+
+            rotation = 0f
+            brightness = 0f
+            contrast = 1f
+            saturation = 1f
+
+            renderImage()
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        imageView = findViewById(R.id.imageView)
+        emptyText = findViewById(R.id.emptyText)
+
+        findViewById<MaterialButton>(R.id.openButton).setOnClickListener {
+            imagePicker.launch("image/*")
+        }
+
+        findViewById<MaterialButton>(R.id.rotateButton).setOnClickListener {
+            if (originalBitmap != null) {
+                rotation = (rotation + 90f) % 360f
+                renderImage()
+            }
+        }
+
+        findViewById<MaterialButton>(R.id.saveButton).setOnClickListener {
+            saveImage()
+        }
+
+        findViewById<Slider>(R.id.brightnessSlider).addOnChangeListener { _, value, _ ->
+            brightness = value
+            renderImage()
+        }
+
+        findViewById<Slider>(R.id.contrastSlider).addOnChangeListener { _, value, _ ->
+            contrast = value
+            renderImage()
+        }
+
+        findViewById<Slider>(R.id.saturationSlider).addOnChangeListener { _, value, _ ->
+            saturation = value
+            renderImage()
+        }
+    }
+
+    private fun renderImage() {
+        val source = originalBitmap ?: return
+
+        emptyText.visibility = View.GONE
+        imageView.visibility = View.VISIBLE
+
+        val matrix = ColorMatrix()
+        matrix.setSaturation(saturation)
+
+        val translate = (-0.5f * contrast + 0.5f) * 255f + brightness * 255f
+
+        val contrastMatrix = ColorMatrix(
+            floatArrayOf(
+                contrast, 0f, 0f, 0f, translate,
+                0f, contrast, 0f, 0f, translate,
+                0f, 0f, contrast, 0f, translate,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+
+        matrix.postConcat(contrastMatrix)
+
+        val rotatedBitmap = Bitmap.createBitmap(
+            source,
+            0,
+            0,
+            source.width,
+            source.height,
+            Matrix().apply { postRotate(rotation) },
+            true
+        )
+
+        val result = Bitmap.createBitmap(
+            rotatedBitmap.width,
+            rotatedBitmap.height,
+            Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = Canvas(result)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.colorFilter = ColorMatrixColorFilter(matrix)
+
+        canvas.drawBitmap(rotatedBitmap, 0f, 0f, paint)
+
+        if (rotatedBitmap !== source) {
+            rotatedBitmap.recycle()
+        }
+
+        imageView.setImageBitmap(result)
+    }
+
+    private fun saveImage() {
+        if (originalBitmap == null) {
+            Toast.makeText(this, "আগে একটি ছবি নির্বাচন করুন", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val bitmap = Bitmap.createBitmap(
+            imageView.width.coerceAtLeast(1),
+            imageView.height.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = Canvas(bitmap)
+        imageView.draw(canvas)
+
+        val fileName = "PhotoEditPro_${System.currentTimeMillis()}.jpg"
+
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/PhotoEditPro")
+        }
+
+        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+
+        if (uri != null) {
+            contentResolver.openOutputStream(uri)?.use {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it)
+            }
+            Toast.makeText(this, "ছবি Save হয়েছে", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this, "ছবি Save করা যায়নি", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
