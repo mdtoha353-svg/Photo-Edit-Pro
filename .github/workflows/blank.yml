@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Photo Edit pro
 
 on:
   push:
