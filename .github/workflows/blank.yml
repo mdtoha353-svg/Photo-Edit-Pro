@@ -1,4 +1,4 @@
-name: CI
+name: Buld android apk
 
 on:
   push:
